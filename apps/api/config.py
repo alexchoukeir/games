@@ -5,6 +5,8 @@ from functools import lru_cache
 
 load_dotenv()
 
+ENVIRONMENT = os.getenv('ENVIRONMENT', 'development')
+
 def get_parameters(parameter_name: str) -> str:
     """
     Fetches a parameter value from AWS Systems Manager Parameter Store.
@@ -15,21 +17,48 @@ def get_parameters(parameter_name: str) -> str:
     Returns:
         str: The value of the parameter.
     """
-    ssm = boto3.client('ssm')
-    response = ssm.get_parameter(Name=parameter_name, WithDecryption=True)
-    return response['Parameter']['Value']
-
+    try:
+        ssm = boto3.client('ssm')
+        response = ssm.get_parameter(Name=parameter_name, WithDecryption=True)
+        par = response['Parameter']['Value']
+        if not par:
+            raise ValueError(f"Parameter {parameter_name} is empty.")
+        return par
+    except Exception as e:
+        raise RuntimeError(f"Error fetching parameter {parameter_name}: {e}") from e
+        
 class ConfigSettings:
     def __init__(self):
+        if ENVIRONMENT == 'production':
+            self._load_production()
+        else:
+            self._load_development()
+
+    def _load_development(self):
+        self.db_host = os.environ['DB_HOST']
+        self.db_password = os.environ['DB_PASSWORD']
+        self.db_name = os.environ['DB_NAME']
+        self.user = os.environ['DB_USER']
+        self.api = os.environ['API']
+        self.llm_key = os.environ['LLM_KEY']
+        self.sync_key = os.environ['SYNC_KEY']
+        self.aws_region = os.environ['AWS_REGION']
+        self.sqs_queue = os.environ['SQS_QUEUE']
+        self.sqs_endpoint = os.environ['SQS_ENDPOINT']
+        self.s3_bucket = os.environ['S3_BUCKET']
+        
+    def _load_production(self):
         self.db_host = get_parameters('/games/host')
         self.db_password = get_parameters('/games/db-password')
-        self.db_name = os.getenv('DB_NAME')
-        self.user = os.getenv('DB_USER')
+        self.db_name = os.environ['DB_NAME']
+        self.user = os.environ['DB_USER']
+        self.api = get_parameters('/games/api')
         self.llm_key = get_parameters('/games/llm-key')
         self.sync_key = get_parameters('/games/sync-key')
-        self.aws_region = os.getenv('AWS_REGION')
-        self.sqs_queue = os.getenv('SQS_QUEUE')
-        self.s3_bucket = os.getenv('S3_BUCKET')
+        self.aws_region = os.environ['AWS_REGION']
+        self.sqs_queue = os.environ['SQS_QUEUE']
+        self.sqs_endpoint = None
+        self.s3_bucket = os.environ['S3_BUCKET']
 
     @property
     def database_url(self) -> str:
